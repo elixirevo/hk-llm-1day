@@ -5,6 +5,7 @@ def phase5():
 import json
 import re
 from typing import Any
+import concurrent.futures
 
 
 def llm_call(prompt: str) -> str:
@@ -307,19 +308,18 @@ FINAL_OUTPUT_PROMPT = """
         "intent":       "질문 의도",
         "answer_guide": "답변 방향 가이드",
         "keyword_tags": [],
-        "priority":     1
+        "priority_scores": {{
+          "difficulty":      "난이도 (예: 상/중/하)",
+          "frequency":       "빈출도 (예: 상/중/하)",
+          "job_relevance":   "직무 연관도 (예: 상/중/하)",
+          "overall_priority": 1
+        }}
       }}
     ],
     "answer_strategy": {{
       "star_based":        ["STAR 기반 답변 포인트1", "..."],
       "keyword_guide":     ["강조할 키워드1", "..."],
       "job_fit_summary":   "직무 적합도 한 줄 요약"
-    }},
-    "priority_scores": {{
-      "keyword":      "핵심 키워드 (직무명·기술 등)",
-      "highlight":    "가장 강조할 경험",
-      "blind_spot":   "보완이 필요한 부분",
-      "fit_score":    "JD 적합도 추정 (0~100)"
     }}
   }},
   "meta": {{
@@ -401,19 +401,26 @@ def run_phase5(
     orchestration = orchestrate_question_types(phase1_results, phase2_results)
     strategies    = orchestration.get("strategies", {})
 
-    # ── Step 2: 유형별 평가-최적화 루프 ───────────────────────
+    # ── Step 2: 유형별 평가-최적화 루프 (병렬 처리) ────────────────
     all_loop_results: list[dict] = []
 
-    for q_type in QUESTION_TYPES:
-        strategy = strategies.get(q_type, {})
-        result   = run_question_loop(
-            question_type=q_type,
-            strategy=strategy,
-            phase1_results=phase1_results,
-            phase2_results=phase2_results,
-            max_retries=max_retries,
-        )
-        all_loop_results.append(result)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(QUESTION_TYPES)) as executor:
+        futures = []
+        for q_type in QUESTION_TYPES:
+            strategy = strategies.get(q_type, {})
+            futures.append(
+                executor.submit(
+                    run_question_loop,
+                    q_type,
+                    strategy,
+                    phase1_results,
+                    phase2_results,
+                    max_retries,
+                )
+            )
+        
+        for future in concurrent.futures.as_completed(futures):
+            all_loop_results.append(future.result())
 
     # ── Step 3: 최종 통합 리포트 생성 ─────────────────────────
     print(f"\n{'='*55}")
@@ -430,78 +437,3 @@ def run_phase5(
     print(json.dumps(final_report, ensure_ascii=False, indent=2))
 
     return final_report
-
-
-# ─────────────────────────────────────────────
-# 7.  실행 예시 (테스트용 mock)
-# ─────────────────────────────────────────────
-if __name__ == "__main__":
-    import phase5  # 자기 자신 import (llm_call 주입 테스트용)
-
-    # ── mock llm_call 주입 ──────────────────────────────────
-    MOCK_RESPONSES: dict[str, str] = {
-        "orchestrator": json.dumps({
-            "strategies": {t: {"focus_keywords": ["AI", "LLM"], "source_hint": "JD 참조"} for t in QUESTION_TYPES}
-        }, ensure_ascii=False),
-        "generator": json.dumps({
-            "question_type": "경험검증",
-            "questions": [{"question": "LLM 파인튜닝 경험을 구체적으로 설명하세요.", "intent": "실전 경험 확인", "answer_guide": "STAR 구조로 답변", "keyword_tags": ["LLM", "파인튜닝"]}]
-        }, ensure_ascii=False),
-        "evaluator": json.dumps({
-            "specificity":  {"result": "PASS", "reason": "구체적 기술 언급"},
-            "relevance":    {"result": "PASS", "reason": "JD 필수 기술 연결"},
-            "job_fit":      {"result": "PASS", "reason": "유형 목적 부합"},
-            "culture_fit":  {"result": "N/A",  "reason": "해당 없음"},
-            "final_result": "PASS",
-            "improvement":  ""
-        }, ensure_ascii=False),
-        "final": json.dumps({
-            "company_name": "TestCorp",
-            "job_title":    "AI Engineer",
-            "report": {
-                "question_list": [],
-                "answer_strategy": {"star_based": [], "keyword_guide": [], "job_fit_summary": ""},
-                "priority_scores": {"keyword": "", "highlight": "", "blind_spot": "", "fit_score": "80"}
-            },
-            "meta": {"total_questions": 0, "passed_types": [], "failed_types": []}
-        }, ensure_ascii=False),
-    }
-
-    _call_count: dict[str, int] = {"n": 0}
-
-    def mock_llm_call(prompt: str) -> str:
-        n = _call_count["n"]
-        _call_count["n"] += 1
-        if n == 0:
-            return MOCK_RESPONSES["orchestrator"]
-        elif n % 2 == 1:
-            return MOCK_RESPONSES["generator"]
-        elif n % 2 == 0 and n < 12:
-            return MOCK_RESPONSES["evaluator"]
-        else:
-            return MOCK_RESPONSES["final"]
-
-    phase5.llm_call = mock_llm_call  # type: ignore
-
-    # ── 샘플 Phase1 / Phase2 결과 ──────────────────────────
-    sample_phase1 = [
-        {"company_name": "TestCorp", "job_title": "AI Engineer", "agent_id": "req",
-         "payload": {"requirements": [{"keyword": "LLM/Agent 설계", "type": "must", "weight": 0.9, "evidence": "RAG 시스템 구축 경험"}]}},
-        {"company_name": "TestCorp", "job_title": "AI Engineer", "agent_id": "plus",
-         "payload": {"pluses": [{"keyword": "MLOps", "category": "기술", "appeal": "high", "question_hint": "배포 파이프라인 설계"}]}},
-        {"company_name": "TestCorp", "job_title": "AI Engineer", "agent_id": "role",
-         "payload": {"roles": [{"role_name": "LLM 서비스 개발", "required_skills": ["Python", "LangChain"], "question_type": "기술깊이"}]}},
-        {"company_name": "TestCorp", "job_title": "AI Engineer", "agent_id": "biz",
-         "payload": {"biz_direction": {"strategy_keywords": ["AI 전환", "데이터 플랫폼"], "recent_initiatives": [], "why_company_seeds": []}}},
-        {"company_name": "TestCorp", "job_title": "AI Engineer", "agent_id": "corp",
-         "payload": {"company_info": {"recent_news": [], "culture_keywords": ["자율", "도전"], "differentiators": ["업계 1위 데이터"]}}},
-    ]
-
-    sample_phase2 = {
-        "sections": [
-            {"question": "지원 동기를 서술하세요.", "answer": "LLM 기반 제품을 개발한 경험이 있으며 귀사의 AI 전환 전략에 기여하고 싶습니다."},
-            {"question": "본인의 강점을 서술하세요.", "answer": "RAG 파이프라인 구축 및 파인튜닝 경험을 보유하고 있습니다."},
-        ]
-    }
-
-    run_phase5(sample_phase1, sample_phase2, max_retries=3)
