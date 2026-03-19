@@ -37,9 +37,9 @@ Phase 1의 현재 목표는 JD를 분석해서 하나의 통합 결과를 만드
 
 이 구조를 사용하면 `payload` 내부는 워커별로 달라도 되고, Phase 2는 `agent_id`를 보고 적절한 후속 처리를 수행할 수 있다.
 
-## 3. 현재 코드 기준 유지할 구조
+## 3. 신규 구현할 구조 (lib/phase1.py)
 
-현재 코드에서 유지할 주요 변수명과 함수명은 아래와 같다.
+`lib/phase1.py`에 다음 주요 변수명과 함수명 구조를 기반으로 모든 로직을 새로 작성한다.
 
 - `AgentTask`
 - `ANCHORS`
@@ -57,7 +57,7 @@ Phase 1의 현재 목표는 JD를 분석해서 하나의 통합 결과를 만드
 - `run_jd_workers(jd_text, llm_async_fn)`
 - `llm_async_fn(prompt, model)`
 
-문서와 구현은 이 이름을 그대로 기준으로 맞춘다.
+신규 구현 시에도 이 이름들을 기준으로 규격을 맞춘다.
 
 ## 4. Phase 1 처리 흐름
 
@@ -274,86 +274,45 @@ wrapper 예시:
 }
 ```
 
-## 6. 지금 코드에 반영해야 할 수정 사항
+## 6. 구현 세부 계획 (lib/phase1.py 작성)
 
-### 6-1. `run_llm_parallel()`에서 모델 인자 전달
+현재 프로젝트에 워커 로직 코드가 존재하지 않으므로, 아래 기능들을 모두 `lib/phase1.py` 안에 새로 구현한다.
 
-현재 문제:
+### 6-1. 기본 설정 및 자료구조
+- `import json` 및 `asyncio`, 타이핑 관련 모듈 추가
+- `AgentTask` (dataclass 혹은 TypedDict) 정의
+- `ANCHORS` (JD 섹션 분리 기준) 정의
+- `AGENT_MAP` (각 담당 워커 정보) 정의
 
-- `llm_async_fn(item["user_prompt"])`로 호출하고 있음
-- 실제 시그니처는 `llm_async_fn(prompt, model)`
+### 6-2. `build_tasks()` 안전한 구현
+- `ANCHORS`를 기반으로 `sections.get(anchor, "")`를 사용하여 딕셔너리 키 에러를 방지하며 안전하게 섹션 추출
+- 추출된 섹션 기반으로 5개의 워커(job)에 대한 `AgentTask` 생성
 
-수정 방향:
+### 6-3. 프롬프트 및 모델 라우팅 (`build_prompt_details`)
+- 각 역할별 프롬프트 생성 함수(`get_role_prompt` 등)와 맵핑 딕셔너리(`PROMPT_FN_MAP`) 작성
+- `role`, `req`, `plus` 모델은 `"gpt-4o"`로 지정
+- `biz`, `corp` 모델은 `"gpt-4.1"`로 지정하여 모델 파라미터를 추가
 
-- `llm_async_fn(item["user_prompt"], item["model"])`로 변경
+### 6-4. LLM 병렬 실행 (`run_llm_parallel`)
+- `llm_utils/utils.py` 등의 비동기 함수(예: `llm_search_async`)를 활용하여 각 워커의 프롬프트를 모델과 함께 병렬 디스패치 (`await asyncio.gather(...)`)
 
-### 6-2. `build_prompt_details()` 모델 분기
+### 6-5. 공통 JSON 정리 및 파싱 (`clean_json_response`)
+- 응답에 포함된 fenced code block (` ```json ... ``` `) 제거 로직 추가
+- 파싱 실패 시 에러를 핸들링하고 `agent_id`와 함께 로그 출력
 
-현재 문제:
-
-- 모든 워커가 `"gpt-4o"`로 고정됨
-
-수정 방향:
-
-- `role`, `req`, `plus`는 `"gpt-4o"`
-- `biz`, `corp`는 `"gpt-4.1"` 또는 검색 가능한 모델
-
-### 6-3. `build_tasks()` 안전화
-
-현재 문제:
-
-- `sections[anchor]` 접근 시 `KeyError` 가능
-
-수정 방향:
-
-- `sections.get(anchor, "")` 사용
-- 누락 섹션에 대한 fallback 처리 추가
-
-### 6-4. `import json` 추가
-
-현재 문제:
-
-- 드라이런 하단에서 `json.loads`, `json.dumps`를 사용하지만 import가 없음
-
-수정 방향:
-
-- 상단 import에 `json` 추가
-
-### 6-5. 공통 JSON 정리 함수 추가
-
-현재 문제:
-
-- 워커 응답이 코드블록 또는 부가 텍스트와 섞이면 파싱이 흔들릴 수 있음
-
-수정 방향:
-
-- `clean_json_response()` 추가
-- fenced code block 제거
-- 파싱 실패 시 `agent_id`와 함께 로그 출력
-
-### 6-6. wrapper 조립 단계 추가
-
-현재 문제:
-
-- 워커 응답을 받은 뒤 Phase 2용 공통 wrapper로 감싸는 단계가 없음
-
-수정 방향:
-
-- `company_name`, `job_title`, `agent_id`, `payload` 구조로 조립
-- `run_jd_workers()` 또는 별도 함수에서 최종 리스트 반환
+### 6-6. 전역 래핑 및 실행 흐름 통합 (`run_jd_workers`)
+- 위 함수들을 순서대로 호출
+- 최종 파싱된 각 워커의 결과를 `company_name`, `job_title`, `agent_id`, `payload` 형태로 조립하여 최종 리스트 반환
 
 ## 7. 구현 우선순위
 
-현재 목표 기준 우선순위는 아래와 같다.
+새 백지 상태에서 시작하므로 다음 순서로 코드를 작성한다.
 
-1. `import json` 추가
-2. `run_llm_parallel()` 수정
-3. `build_prompt_details()` 모델 분기 수정
-4. `build_tasks()` 안전화
-5. `clean_json_response()` 추가
-6. 워커 응답 JSON 파싱 안정화
-7. 공통 wrapper 조립 단계 추가
-8. Phase 2 입력 리스트 형태로 반환
+1. `lib/phase1.py` 기반/구조 뼈대 잡기 (`imports`, 변수, 자료구조 선언)
+2. `clean_json_response()`, `run_llm_parallel()`, 개별 프롬프트 함수 등 헬퍼 함수 작성
+3. `build_tasks()` 및 `build_prompt_details()` 로직 구현
+4. `run_jd_workers()`로 메인 실행 파이프라인(Wrapper 조립 포함) 연동
+5. `main.py` 또는 `project.ipynb`를 통한 연동 및 결과물(JSON 형태) 테스트
 
 ## 8. 테스트 계획
 
@@ -492,13 +451,10 @@ wrapper 예시:
 
 ## 11. 바로 다음 할 일
 
-지금 바로 하면 좋은 순서는 아래와 같다.
+지금 바로 실행할 작업은 아래와 같다.
 
-1. `import json` 추가
-2. `run_llm_parallel()` 수정
-3. `build_prompt_details()` 모델 분기 수정
-4. `build_tasks()` 안전화
-5. `clean_json_response()` 추가
-6. wrapper 조립 함수 추가
+1. **`lib/phase1.py` 스크립트 전면 작성**: 빈 파일에서 시작하여 `PLAN-phase1.md` 명세에 맞춘 코드 구현
+2. **`JD-sample.md`를 이용한 동작 테스트 시나리오 마련 (`project.ipynb` 등 활용)**
+3. JSON 파싱 안정성 및 wrapper 형식(`company_name`, `job_title`, `agent_id`, `payload`) 체크
 
-이 단계가 끝나면, Phase 1은 "통합 분석기"가 아니라 "Phase 2에 넘길 표준 워커 결과 생성기"로서 역할을 수행할 수 있다.
+이 단계가 끝나면, 완전한 "Phase 2를 향한 표준 워커 결과 생성기"로서 Phase 1 모듈이 정상 가동할 것이다.
