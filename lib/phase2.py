@@ -471,3 +471,7 @@ JSON만 반환한다.
 #     )
 #     pprint(final_output)
 
+
+
+res = classify_personal_statement_sections("test")
+print(res)
