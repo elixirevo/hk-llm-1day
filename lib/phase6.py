@@ -1,4 +1,4 @@
-def generate_answer(question: str, job_category: str, feedback_history: str = None) -> str:
+def phase6(question: str, job_category: str, feedback_history: str = None) -> str:
     """
     면접 질문에 대한 모범 답안을 생성합니다.
 
