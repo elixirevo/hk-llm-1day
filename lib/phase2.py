@@ -8,7 +8,7 @@ from openai import OpenAI
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from llm_utils.utils import llm_call
-from tools import parse_md_json, _normalize_js_list, _normalize_personal_statements, _dedupe_keep_order, _safe_output_text, _structured_call
+from lib.tools import parse_md_json, _normalize_js_list, _normalize_personal_statements, _dedupe_keep_order, _safe_output_text, _structured_call
 
 # 1. 자기소개서 각 항목 분류하는 함수
 
@@ -140,7 +140,7 @@ def analyze_and_match_statement(
     personal_statement_list: List[Dict[str, str]],
     *,
     client: Optional[OpenAI] = None,
-    model: str = "gpt-5.4-mini",
+    model: str = "gpt-4o",
     max_workers: int = 4,
 ) -> Dict[str, Any]:
     """
@@ -185,6 +185,27 @@ def analyze_and_match_statement(
         },
         "items": results
     }
+
+
+def analyze_and_match_essay(
+    js_list: Dict[str, Any],
+    personal_statement_list: List[Dict[str, str]],
+    *,
+    client: Optional[OpenAI] = None,
+    model: str = "gpt-4o",
+    max_workers: int = 4,
+) -> Dict[str, Any]:
+    """
+    analyze_and_match_statement와 동일한 동작을 수행하는 호환용 별칭 함수.
+    노트북/예제 코드에서 기존 함수명을 그대로 사용할 수 있게 유지한다.
+    """
+    return analyze_and_match_statement(
+        js_list=js_list,
+        personal_statement_list=personal_statement_list,
+        client=client,
+        model=model,
+        max_workers=max_workers,
+    )
 
 
 # -----------------------------
@@ -270,7 +291,7 @@ def build_question_context(
     analyzed_result: Dict[str, Any],
     *,
     client: Optional[OpenAI] = None,
-    model: str = "gpt-5.4-mini",
+    model: str = "gpt-4o",
     max_workers: int = 4,
 ) -> Dict[str, Any]:
     """
@@ -470,8 +491,3 @@ JSON만 반환한다.
 #         model="gpt-4o-mini"
 #     )
 #     pprint(final_output)
-
-
-
-res = classify_personal_statement_sections("test")
-print(res)
