@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -98,7 +97,7 @@ def optimize_question_with_retries(
     question: str,
     job_category: str,
     max_retries: int = 3,
-) -> Dict:
+) -> dict:
     initial_evaluation = phase4(question, job_category)
     initial_status = get_status(initial_evaluation)
 
@@ -120,7 +119,11 @@ def optimize_question_with_retries(
     current_status = initial_status
 
     for attempt in range(1, max_retries + 1):
-        optimized_question = improve_question(current_question, current_evaluation, job_category)
+        optimized_question = improve_question(
+            current_question,
+            current_evaluation,
+            job_category,
+        )
         optimized_evaluation = phase4(optimized_question, job_category)
         optimized_status = get_status(optimized_evaluation)
 
@@ -150,17 +153,17 @@ def optimize_question_with_retries(
 
 
 def optimize_questions_with_retries(
-    questions: List[str],
+    questions: list[str],
     job_category: str,
     max_retries: int = 3,
-) -> List[Dict]:
+) -> list[dict]:
     return [
         optimize_question_with_retries(question, job_category, max_retries)
         for question in questions
     ]
 
 
-def get_passed_final_questions(results: List[Dict]) -> List[str]:
+def get_passed_final_questions(results: list[dict]) -> list[str]:
     return [
         item["final_question"]
         for item in results
