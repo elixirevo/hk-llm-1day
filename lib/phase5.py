@@ -139,8 +139,11 @@ def phase5(passed_questions: list[str], job_category: str) -> dict:
 def format_phase5_output(result: dict) -> str:
     """
     phase5 결과를 받아서 지정된 카테고리 순서대로 텍스트 출력만 담당
-    (불필요한 전체 재정렬 로직 제거)
+    (개별 분석 내용 제거 및 카테고리별 독립 순위 표시)
     """
+    if not result:
+        return "표시할 예상 질문이 없습니다."
+
     category_order = [
         "1) 지원동기 / 직무 적합성",
         "2) 프로젝트 경험 검증",
@@ -150,7 +153,6 @@ def format_phase5_output(result: dict) -> str:
     ]
     
     lines = ["🏆 직무별 핵심 예상 질문 리포트\n"]
-    global_counter = 1
     
     # 1. 정해진 순서대로 카테고리 필터링
     sorted_cats = [c for c in category_order if c in result]
@@ -161,14 +163,10 @@ def format_phase5_output(result: dict) -> str:
         data = result[cat]
         lines.append(f"■ {cat}")
         
-        # 이미 phase5에서 정렬되어 온 결과이므로 그대로 출력
-        for q in data["ranked_questions"]:
-            lines.append(f"{global_counter}. {q.get('question', '')}")
-            lines.append(f"   💡 [분석] {q.get('reason', '')}")
-            global_counter += 1
-            
-        if data["ranking_reason"]:
-            lines.append(f"   📌 [유형 분석 포인트]\n   {data['ranking_reason']}\n")
+        # 카테고리 내에서 1위부터 순위 매김 (이미 점수순 정렬된 상태)
+        for i, q in enumerate(data.get("ranked_questions", [])):
+            rank = i + 1
+            lines.append(f"  {rank}위. {q.get('question', '')}")
             
     return "\n".join(lines).strip()
 
