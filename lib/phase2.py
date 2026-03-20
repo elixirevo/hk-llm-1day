@@ -11,25 +11,35 @@ from llm_utils.utils import llm_call
 from lib.tools import parse_md_json, _normalize_js_list, _normalize_personal_statements, _dedupe_keep_order, _safe_output_text, _structured_call
 
 # 1. 자기소개서 각 항목 분류하는 함수
+import re
 
-def classify_personal_statement_sections(personal_statement_text: str) -> dict:
-    JSON_STRUCTURE = {
-        "question": "질문 내용",
-        "answer": "답변 내용"
-    }
-
-    system_prompt = f"""
-    [원문] = {personal_statement_text}
-
-    [지시사항]
-    위 [원문]을 항목별로 분류 해.
-
-    [출력 형식]
-    {JSON_STRUCTURE}
-    """
-
-    response = llm_call(system_prompt)
-    return response
+def classify_personal_statement_sections(personal_statement_text: str) -> List[Dict[str, str]]:
+    sections = []
+    
+    # "### 1. ", "### 2. " 등을 기준으로 문자열 분리
+    parts = re.split(r'^###\s+\d+\.\s*', personal_statement_text, flags=re.MULTILINE)
+    
+    for part in parts[1:]:
+        if '\n' in part:
+            question, answer_raw = part.split('\n', 1)
+        else:
+            question = part
+            answer_raw = ""
+            
+        answer = answer_raw.strip()
+        # 불필요한 마크다운 구분자 제거
+        answer = answer.replace('---', '').strip()
+        if answer.startswith('```'):
+            answer = answer[3:].strip()
+        if answer.endswith('```'):
+            answer = answer[:-3].strip()
+            
+        sections.append({
+            "question": question.strip(),
+            "answer": answer.strip()
+        })
+        
+    return sections
 
 # -----------------------------
 # 1) analyze_and_match_essay
