@@ -43,6 +43,7 @@ def classify_personal_statement_sections(personal_statement_text: str) -> List[D
 
 # -----------------------------
 # 1) analyze_and_match_essay
+# 쪼개진 4개를 병렬로 LLM한테 맡겨서 분석하기
 # -----------------------------
 
 def _analyze_single_statement(
@@ -220,6 +221,7 @@ def analyze_and_match_essay(
 
 # -----------------------------
 # 2) build_question_context
+# 분석된 4개를 병렬로 LLM한테 맡겨서 질문 컨텍스트 뽑기
 # -----------------------------
 
 def _build_single_question_context(
@@ -345,6 +347,7 @@ def build_question_context(
 
 # -----------------------------
 # 3) aggregate_phase2_results
+# 위에서 나온 결과들을 하나로 뭉쳐서 최종 위험 요소랑 우선순위 정리하기
 # -----------------------------
 
 def aggregate_phase2_results(
