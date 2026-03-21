@@ -1,14 +1,9 @@
-import os
-import sys
 from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from openai import OpenAI
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from llm_utils.utils import llm_call
-from lib.tools import parse_md_json, _normalize_js_list, _normalize_personal_statements, _dedupe_keep_order, _safe_output_text, _structured_call
+from lib.tools import _normalize_js_list, _normalize_personal_statements, _dedupe_keep_order, _structured_call
 
 # 1. 자기소개서 각 항목 분류하는 함수
 import re
@@ -49,7 +44,7 @@ def classify_personal_statement_sections(personal_statement_text: str) -> List[D
 def _analyze_single_statement(
     client: OpenAI,
     model: str,
-    jd_items: List[Dict[str, Any]],
+    jd_bundle: Dict[str, Any],
     statement_item: Dict[str, str],
 ) -> Dict[str, Any]:
     schema = {
@@ -113,6 +108,7 @@ def _analyze_single_statement(
 
 입력:
 - JD 핵심 항목 목록
+- 회사/직무/우대사항/기업 맥락
 - 자기소개서 질문/답변 1개
 
 해야 할 일:
@@ -132,7 +128,16 @@ def _analyze_single_statement(
 """.strip()
 
     payload = {
-        "jd_items": jd_items,
+        "target": {
+            "company": jd_bundle["company"],
+            "division": jd_bundle["division"],
+            "role": jd_bundle["role"],
+        },
+        "jd_items": jd_bundle["jd_items"],
+        "requirements": jd_bundle.get("requirements", []),
+        "pluses": jd_bundle.get("pluses", []),
+        "biz_direction": jd_bundle.get("biz_direction", {}),
+        "company_info": jd_bundle.get("company_info", {}),
         "statement_item": statement_item
     }
 
@@ -178,7 +183,7 @@ def analyze_and_match_statement(
                 _analyze_single_statement,
                 client,
                 model,
-                jd_bundle["jd_items"],
+                jd_bundle,
                 item
             ): idx
             for idx, item in enumerate(statement_items)
