@@ -1,15 +1,14 @@
-def phase6(question: str, job_category: str, feedback_history: str = None) -> str:
-    """
-    면접 질문에 대한 모범 답안을 생성합니다.
+from __future__ import annotations
 
-    Args:
-        question: 면접 질문
-        job_category: 직무 카테고리 (백엔드/프론트엔드/데이터)
-        feedback_history: 이전 평가 피드백 기록 (선택)
-    Returns:
-        모범 답안 문자열
-    """
+from typing import Any, Dict, Optional
 
+from llm_utils import llm_call
+
+
+def generate_answer(question: str, job_category: str, feedback_history: Optional[str] = None) -> str:
+    """
+    질문 1개에 대한 모범 답안을 생성합니다.
+    """
     if feedback_history:
         prompt = f"""
 당신은 {job_category} 직무 면접 코치입니다.
@@ -45,3 +44,53 @@ def phase6(question: str, job_category: str, feedback_history: str = None) -> st
 """
 
     return llm_call(prompt)
+
+
+def phase6(question: str, job_category: str, feedback_history: Optional[str] = None) -> str:
+    """
+    기존 단일 질문 답변 생성 인터페이스를 유지합니다.
+    """
+    return generate_answer(question, job_category, feedback_history)
+
+
+def generate_answers_from_phase5(
+    phase5_result: Dict[str, Any],
+    job_category: str,
+    *,
+    top_n_per_category: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Phase 5 결과를 받아 카테고리별 상위 질문의 모범 답변을 생성합니다.
+    """
+    final_output: Dict[str, Any] = {}
+
+    for category, category_result in phase5_result.items():
+        ranked_questions = category_result.get("ranked_questions", [])
+        if top_n_per_category is not None:
+            ranked_questions = ranked_questions[:top_n_per_category]
+
+        answered_questions = []
+        for idx, item in enumerate(ranked_questions, start=1):
+            question = item.get("question", "").strip()
+            if not question:
+                continue
+
+            answer = generate_answer(question, job_category)
+            answered_questions.append({
+                "rank": idx,
+                "question": question,
+                "difficulty": item.get("difficulty"),
+                "frequency": item.get("frequency"),
+                "relevance": item.get("relevance"),
+                "total": item.get("total"),
+                "reason": item.get("reason", ""),
+                "sample_answer": answer,
+            })
+
+        final_output[category] = {
+            "ranking_reason": category_result.get("ranking_reason", ""),
+            "answers": answered_questions,
+        }
+
+    return final_output
+
