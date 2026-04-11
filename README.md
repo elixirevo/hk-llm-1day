@@ -34,3 +34,7 @@ python3 main.py --jd path/to/jd.md --essay path/to/essay.md
 - `lib/phase4.py`: 질문 평가 및 개선 루프
 - `lib/phase5.py`: 질문 분류 및 우선순위 리포트
 - `lib/pipeline.py`: Phase 1~5 end-to-end 파이프라인
+
+## pipeline
+
+![image](interview_pipeline.drawio.png)
